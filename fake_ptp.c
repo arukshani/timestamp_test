@@ -59,6 +59,9 @@ SOFTWARE.
 
 #define DOMAIN_NUM 0xCA
 
+bool debugen = true;
+bool running = true;
+
 static unsigned char sync_packet[] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // dmac
 	0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, // smac
@@ -86,10 +89,71 @@ static void bail(const char *error)
 	exit(1);
 }
 
+static __u16 char_to_u16(unsigned char a[]) {
+	__u16 n = 0;
+	memcpy(&n, a, 2);
+	return n;
+}
+
+static void sig_handler(int sig)
+{
+	running = false;
+}
+
+static void debug_packet_data(size_t length, uint8_t *data)
+{
+	size_t i;
+
+	if (!debugen)
+		return;
+
+	DEBUG("Length %ld\n", length);
+	if (length > 0) {
+		fprintf(stderr, " ");
+		for (i = 0; i < length; i++)
+			fprintf(stderr, "%02x ", data[i]);
+		fprintf(stderr, "\n");
+	}
+}
+
+/* Checks that the packet received was actually one sent by us */
+static int is_rx_tstamp(unsigned char *buf)
+{
+	// Will arive without tag when received on the socket
+	/*if (using_tagged())*/
+		/*return buf[DOMAIN_NUM_OFFSET + VLAN_TAG_SIZE] == DOMAIN_NUM;*/
+	/*else*/
+		return buf[DOMAIN_NUM_OFFSET] == DOMAIN_NUM;
+}
+
+static clockid_t get_clockid(int fd)
+{
+#define CLOCKFD 3
+	return (((unsigned int) ~fd) << 3) | CLOCKFD;
+}
+
 static void setsockopt_txtime(int fd)
 {
+
+	int fdd;
+    char *device = "/dev/ptp2";
+    clockid_t clkid;
+
+    fdd = open(device, O_RDWR);
+	if (fdd < 0) {
+		fprintf(stderr, "opening %s: %s\n", device, strerror(errno));
+		// return -1;
+	}
+
+	clkid = get_clockid(fdd);
+	if (CLOCK_INVALID == clkid) {
+		fprintf(stderr, "failed to read clock id\n");
+		// return -1;
+	}
+
 	struct sock_txtime so_txtime_val = {
 			.clockid =  CLOCK_TAI,
+			// .clockid = clkid,
 			/*.flags = SOF_TXTIME_DEADLINE_MODE | SOF_TXTIME_REPORT_ERRORS */
 			.flags = SOF_TXTIME_REPORT_ERRORS
 			};
@@ -258,9 +322,293 @@ void set_smac(unsigned char *frame, unsigned char mac[ETH_ALEN])
 		frame[6 + i] = mac[i];
 }
 
+static int create_timer()
+{
+	struct itimerspec timer;
+	int interval = 1000;
+
+	int fd = timerfd_create(CLOCK_REALTIME, 0);
+	if (fd < 0)
+		return fd;
+	timer.it_value.tv_sec = interval / 1000;
+	timer.it_value.tv_nsec = (interval % 1000) * 1000000;
+	timer.it_interval.tv_sec = interval / 1000;
+	timer.it_interval.tv_nsec = (interval % 1000) * 1000000;
+
+	timerfd_settime(fd, 0, &timer, NULL);
+	return fd;
+}
+
+
+static void u16_to_char(unsigned char a[], __u16 n) {
+	memcpy(a, &n, 2);
+}
+
+static void set_sequenceId(unsigned char *packet, __u16 seq_id)
+{
+	/* Convert to Big Endian so sequenceId looks correct when viewed in
+	 * Wireshark or Tcpdump.
+	 */
+	// seq_id = htons(seq_id);
+	// if (using_tagged(cfg))
+	// 	u16_to_char(&packet[SEQ_OFFSET + VLAN_TAG_SIZE], seq_id);
+	// else
+	// 	u16_to_char(&packet[SEQ_OFFSET], seq_id);
+
+	u16_to_char(&packet[SEQ_OFFSET], seq_id);
+}
+
+static void pkts_append_seq(Packets *pkts, __u16 tx_seq)
+{
+	pthread_mutex_lock(&pkts->list_lock);
+	pkts->list[tx_seq % pkts->list_len].seq = tx_seq;
+	pkts->list_head = (pkts->list_head + 1) % pkts->list_len;
+	pthread_mutex_unlock(&pkts->list_lock);
+}
+
+__u16 prepare_packet(Packets *pkts)
+{
+	__u16 tx_seq;
+
+	tx_seq = pkts->next_seq;
+	pkts->next_seq++;
+	DEBUG("Xmit: %u\n", tx_seq);
+
+	set_sequenceId(pkts->frame, tx_seq);
+
+	pkts_append_seq(pkts, tx_seq);
+
+	return tx_seq;
+}
+
+static __u16 sendpacket(int sock, unsigned int length, Packets *pkts)
+{
+	__u16 tx_seq;
+
+	tx_seq = prepare_packet(pkts);
+
+	send(sock, pkts->frame, pkts->frame_size, 0);
+
+	return tx_seq;
+}
+
+void get_timestamp(struct msghdr *msg, struct timespec **stamp, int recvmsg_flags, Packets *pkts)
+{
+	struct sockaddr_in *from_addr = (struct sockaddr_in *)msg->msg_name;
+	struct cmsghdr *cmsg;
+
+	for (cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
+		switch (cmsg->cmsg_level) {
+		case SOL_SOCKET:
+			switch (cmsg->cmsg_type) {
+			case SO_TIMESTAMPING: {
+				*stamp = (struct timespec *)CMSG_DATA(cmsg);
+				/* stamp is an array containing 3 timespecs:
+				 * SW, HW transformed, HW raw.
+				 * Use SW or HW raw
+				 */
+				// if (!cfg->software_ts) {
+				// 	/* skip SW */
+				// 	(*stamp)++;
+				// 	/* skip deprecated HW transformed */
+				// 	(*stamp)++;
+				// }
+				/* skip SW */
+				(*stamp)++;
+				/* skip deprecated HW transformed */
+				(*stamp)++;
+
+				if (recvmsg_flags & MSG_ERRQUEUE)
+					pkts->txcount_flag = 1;
+				break;
+			}
+			default:
+				/*DEBUG("type %d\n", cmsg->cmsg_type);*/
+				break;
+			}
+			break;
+		default:
+			/*DEBUG("level %d type %d\n",*/
+				/*cmsg->cmsg_level,*/
+				/*cmsg->cmsg_type);*/
+			break;
+		}
+	}
+}
+
+static __u16 get_sequenceId(unsigned char *buf)
+{
+	// Will arive without tag when received on the socket
+	/*if (using_tagged())*/
+		/*return char_to_u16(&buf[SEQ_OFFSET + VLAN_TAG_SIZE]);*/
+	/*else*/
+		return ntohs(char_to_u16(&buf[SEQ_OFFSET]));
+}
+
+void save_tstamp(struct timespec *stamp, unsigned char *data, size_t length, Packets *pkts, __s32 tx_seq, int recvmsg_flags)
+{
+	struct timespec one_step_ts;
+	__u16 pkt_seq;
+	int idx;
+	int got_tx = 0;
+	int got_rx = 0;
+
+	debug_packet_data(length, data);
+
+	if (tx_seq >= 0) {
+		got_tx = 1;
+		pkt_seq = tx_seq;
+		DEBUG("Got TX seq %d. %lu.%lu\n", pkt_seq, stamp->tv_sec, stamp->tv_nsec);
+	} else if (is_rx_tstamp(data)) {
+		got_rx = 1;
+		pkt_seq = get_sequenceId(data);
+		DEBUG("Got RX seq %d. %lu.%lu\n", pkt_seq, stamp->tv_sec, stamp->tv_nsec);
+	} else {
+		// If the packet we read was not the tx packet then set back
+		// txcount_flag and try again.
+		if (recvmsg_flags & MSG_ERRQUEUE)
+			pkts->txcount_flag = 0;
+		return;
+	}
+
+	idx = pkt_seq % pkts->list_len;
+
+	// if (got_rx && cfg->one_step)
+	// 	one_step_ts = get_one_step(pkts, idx, data, pkt_seq);
+
+	// if (!false) {
+	// 	int has_first = 1;
+	// 	cfg->first_tstamp = cfg->one_step ? one_step_ts : *stamp;
+	// }
+
+	pthread_mutex_lock(&pkts->list_lock);
+	if (pkts->list[idx].seq == pkt_seq) {
+		if (got_tx)
+			pkts->list[idx].xmit = *stamp;
+		else if (got_rx)
+			pkts->list[idx].recv = *stamp;
+	}
+	pthread_mutex_unlock(&pkts->list_lock);
+}
+
+static void recvpacket(int sock, int recvmsg_flags, Packets *pkts,
+		       __s32 tx_seq)
+{
+	char data[256];
+	struct msghdr msg;
+	struct iovec entry;
+	struct sockaddr_in from_addr;
+	struct timespec *stamp = NULL;
+	struct {
+		struct cmsghdr cm;
+		char control[512];
+	} control;
+	int res;
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_iov = &entry;
+	msg.msg_iovlen = 1;
+	entry.iov_base = data;
+	entry.iov_len = sizeof(data);
+	memset(data, 0, sizeof(data));
+	msg.msg_name = (caddr_t)&from_addr;
+	msg.msg_namelen = sizeof(from_addr);
+	msg.msg_control = &control;
+	msg.msg_controllen = sizeof(control);
+
+	res = recvmsg(sock, &msg, recvmsg_flags | MSG_DONTWAIT);
+	if (res >= 0) {
+		// printf("IN recvpacket \n");
+		get_timestamp(&msg, &stamp, recvmsg_flags, pkts);
+		if (!stamp)
+			return;
+		save_tstamp(stamp, msg.msg_iov->iov_base,
+			    res, pkts, tx_seq, recvmsg_flags);
+	}
+}
+
+void rcv_xmit_tstamp(int sock, Packets *pkts, __u16 tx_seq) {
+	fd_set readfs, errorfs;
+	int res;
+
+	// printf("rcv_xmit_tstamp\n");
+	while (!pkts->txcount_flag) {
+		// printf("IN rcv_xmit_tstamp\n");
+		FD_ZERO(&readfs);
+		FD_ZERO(&errorfs);
+		FD_SET(sock, &readfs);
+		FD_SET(sock, &errorfs);
+
+		res = select(sock + 1, &readfs, 0, &errorfs, NULL);
+		if (res > 0) {
+			// printf("IN rcv_xmit_tstamp\n");
+			// recvpacket(sock, 0, pkts, tx_seq);
+			recvpacket(sock, MSG_ERRQUEUE, pkts, tx_seq);
+		}
+	}
+
+	return;
+}
+
+void do_xmit(Packets *pkts, int sock)
+{
+	int delay_us = 1000 * 1000;
+	int length = 0;
+	__u16 tx_seq;
+
+	 /*write one packet */
+	tx_seq = sendpacket(sock, length, pkts);
+	pkts->txcount_flag = 0;
+
+	 /* Receive xmit timestamp for packet */
+	// if (!cfg->one_step)
+		// rcv_xmit_tstamp(sock, cfg, pkts, tx_seq);
+
+	rcv_xmit_tstamp(sock, pkts, tx_seq);
+}
+
+static int run(Packets *pkts, int tx_sock)
+{
+	/* Count to ensure a whole batch has been sent when the time is reached */
+	int current_batch = 0;
+	__u64 triggers = 0;
+	char dummybuf[8];
+	int retval = 0;
+	fd_set rfds;
+	int start;
+	int end;
+
+	/* Watch timerfd file descriptor */
+	FD_ZERO(&rfds);
+	FD_SET(pkts->timerfd, &rfds);
+
+	/* Main loop */
+	printf("Transmitting...\n");
+	while (running) {
+		retval = select(pkts->timerfd + 1, &rfds, NULL, NULL, NULL); /* Last parameter = NULL --> wait forever */
+		if (retval < 0 && errno == EINTR) {
+			retval = 0;
+			break;
+		}
+		if (retval < 0) {
+			perror("Error");
+			break;
+		}
+		if (retval == 0) {
+			continue;
+		}
+
+		if (FD_ISSET(pkts->timerfd, &rfds))
+			read(pkts->timerfd, dummybuf, 8);
+
+		do_xmit(pkts, tx_sock);
+	}
+}
+
 int main(int argc, char **argv)
 {
     int tx_sock;
+	int err;
     unsigned char mac[ETH_ALEN];
 
     Packets pkts;
@@ -272,6 +620,7 @@ int main(int argc, char **argv)
     pkts.frame = sync_packet;
 	pkts.frame_size = sizeof(sync_packet);
 
+	signal(SIGINT, sig_handler);
     pthread_mutex_init(&pkts.list_lock, NULL);
 
     pkts.list_len = 65536;
@@ -289,10 +638,18 @@ int main(int argc, char **argv)
     get_smac(tx_sock, "enp65s0f0np0", mac);
 	set_smac(pkts.frame, mac);
 
+	pkts.timerfd = create_timer();
+	if (pkts.timerfd < 0)
+		goto out_err_timer;
+
+	err = run(&pkts, tx_sock);
+
 // out_err_tx_sock:
 	// pthread_kill(rx_thread, SIGINT);
 	// close(rx_args.sockfd);
 	// return err;
+out_err_timer:
+	close(tx_sock);
 
     free(pkts.list);
 }

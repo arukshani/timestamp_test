@@ -7,18 +7,25 @@
 # define SIOCSHWTSTAMP 0x89b0
 #endif
 
+#ifndef CLOCK_INVALID
+#define CLOCK_INVALID -1
+#endif
+
+#define SEQ_OFFSET 44
+#define DOMAIN_NUM_OFFSET 18
+
 #define ERR(str, ...) fprintf(stderr, "Error: "str, ##__VA_ARGS__)
 
-// #define _DEBUG(file, fmt, ...) do { \
-// 	if (debugen) { \
-// 		fprintf(file, " " fmt, \
-// 		##__VA_ARGS__); \
-// 	} else { \
-// 		; \
-// 	} \
-// } while (0)
+#define _DEBUG(file, fmt, ...) do { \
+	if (debugen) { \
+		fprintf(file, " " fmt, \
+		##__VA_ARGS__); \
+	} else { \
+		; \
+	} \
+} while (0)
 
-// #define DEBUG(...) _DEBUG(stderr, __VA_ARGS__)
+#define DEBUG(...) _DEBUG(stderr, __VA_ARGS__)
 
 // extern bool debugen;// = false;
 extern bool running;// = true;
