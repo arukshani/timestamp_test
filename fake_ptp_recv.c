@@ -372,7 +372,7 @@ __u16 prepare_packet(Packets *pkts)
 
 	tx_seq = pkts->next_seq;
 	pkts->next_seq++;
-	DEBUG("Xmit: %u\n", tx_seq);
+	// DEBUG("Xmit: %u\n", tx_seq);
 
 	set_sequenceId(pkts->frame, tx_seq);
 
@@ -453,7 +453,7 @@ void save_tstamp(struct timespec *stamp, unsigned char *data, size_t length, Pac
 	int got_tx = 0;
 	int got_rx = 0;
 
-	debug_packet_data(length, data);
+	// debug_packet_data(length, data);
 
 	if (tx_seq >= 0) {
 		got_tx = 1;
@@ -471,7 +471,7 @@ void save_tstamp(struct timespec *stamp, unsigned char *data, size_t length, Pac
 		return;
 	}
 
-	idx = pkt_seq % pkts->list_len;
+	// idx = pkt_seq % pkts->list_len;
 
 	// if (got_rx && cfg->one_step)
 	// 	one_step_ts = get_one_step(pkts, idx, data, pkt_seq);
