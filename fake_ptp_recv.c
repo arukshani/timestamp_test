@@ -62,6 +62,10 @@ SOFTWARE.
 bool debugen = true;
 bool running = true;
 
+long time_index = 0;
+struct timespec timestamp_arr[2000];
+__u16 sequence_ids[2000];
+
 static unsigned char sync_packet[] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // dmac
 	0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, // smac
@@ -135,21 +139,21 @@ static clockid_t get_clockid(int fd)
 static void setsockopt_txtime(int fd)
 {
 
-	int fdd;
-    char *device = "/dev/ptp2";
-    clockid_t clkid;
+	// int fdd;
+    // char *device = "/dev/ptp2";
+    // clockid_t clkid;
 
-    fdd = open(device, O_RDWR);
-	if (fdd < 0) {
-		fprintf(stderr, "opening %s: %s\n", device, strerror(errno));
-		// return -1;
-	}
+    // fdd = open(device, O_RDWR);
+	// if (fdd < 0) {
+	// 	fprintf(stderr, "opening %s: %s\n", device, strerror(errno));
+	// 	// return -1;
+	// }
 
-	clkid = get_clockid(fdd);
-	if (CLOCK_INVALID == clkid) {
-		fprintf(stderr, "failed to read clock id\n");
-		// return -1;
-	}
+	// clkid = get_clockid(fdd);
+	// if (CLOCK_INVALID == clkid) {
+	// 	fprintf(stderr, "failed to read clock id\n");
+	// 	// return -1;
+	// }
 
 	struct sock_txtime so_txtime_val = {
 			.clockid =  CLOCK_TAI,
@@ -193,6 +197,16 @@ static void setup_hwconfig(char *interface, int sock, int st_tstamp_flags,
 	} else {
 		hwconfig.tx_type = HWTSTAMP_TX_OFF;
 	}
+	printf("HWTSTAMP_FILTER_PTP_V2_SYNC: %d \n", HWTSTAMP_FILTER_PTP_V2_SYNC);
+	printf("HWTSTAMP_FILTER_NONE: %d \n", HWTSTAMP_FILTER_NONE);
+	printf("HWTSTAMP_TX_ON: %d \n", HWTSTAMP_TX_ON);
+	printf("SOF_TIMESTAMPING_RX_HARDWARE: %d \n", SOF_TIMESTAMPING_RX_HARDWARE);
+	printf("st_tstamp_flags & SOF_TIMESTAMPING_RX_HARDWARE %d \n", (st_tstamp_flags & SOF_TIMESTAMPING_RX_HARDWARE));
+	printf("SOF_TIMESTAMPING_RX_SOFTWARE: %d \n", SOF_TIMESTAMPING_RX_SOFTWARE);
+	printf("SOF_TIMESTAMPING_RAW_HARDWARE: %d \n", SOF_TIMESTAMPING_RAW_HARDWARE);
+	printf("HWTSTAMP_FILTER_ALL: %d \n", HWTSTAMP_FILTER_ALL);
+	printf("HWTSTAMP_TX_ON: %d \n", HWTSTAMP_TX_ON);
+
 	if (ptp_only)
 		hwconfig.rx_filter =
 			(st_tstamp_flags & SOF_TIMESTAMPING_RX_HARDWARE) ?
@@ -355,6 +369,7 @@ static void set_sequenceId(unsigned char *packet, __u16 seq_id)
 	// else
 	// 	u16_to_char(&packet[SEQ_OFFSET], seq_id);
 
+	seq_id = htons(seq_id);
 	u16_to_char(&packet[SEQ_OFFSET], seq_id);
 }
 
@@ -463,6 +478,10 @@ void save_tstamp(struct timespec *stamp, unsigned char *data, size_t length, Pac
 		got_rx = 1;
 		pkt_seq = get_sequenceId(data);
 		DEBUG("Got RX seq %d. %lu.%lu\n", pkt_seq, stamp->tv_sec, stamp->tv_nsec);
+		timestamp_arr[time_index].tv_sec = stamp->tv_sec;
+		timestamp_arr[time_index].tv_nsec = stamp->tv_nsec;
+		sequence_ids[time_index] = pkt_seq;
+		time_index++;
 	} else {
 		// If the packet we read was not the tx packet then set back
 		// txcount_flag and try again.
@@ -643,16 +662,27 @@ void *rcv_pkt(int sockfd)
 
 }
 
+
+
 int main(int argc, char **argv)
 {
 
-    int sockfd = setup_rx_sock("enp65s0f0np0", 0, true, false);
+	signal(SIGINT, sig_handler);
+    int sockfd = setup_rx_sock("enp24s0np0", 0, true, false);
     if (sockfd < 0) {
 		ERR("failed setting up RX socket\n");
 		goto out;
 	}
 
     rcv_pkt(sockfd);
+	FILE *fpt;
+	fpt = fopen("./wire_to_wire_recv.csv", "w+");
+	fprintf(fpt,"seq_id,time_part_sec,time_part_nsec\n");
+	int z = 0;
+	for (z = 0; z < time_index; z++ ) {
+		fprintf(fpt,"%d,%ld,%ld\n",sequence_ids[z],timestamp_arr[z].tv_sec,timestamp_arr[z].tv_nsec);
+	}
+	fclose(fpt);
 
 out:
 	close(sockfd);

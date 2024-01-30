@@ -62,6 +62,10 @@ SOFTWARE.
 bool debugen = true;
 bool running = true;
 
+long time_index = 0;
+struct timespec timestamp_arr[2000];
+__u16 sequence_ids[2000];
+
 static unsigned char sync_packet[] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // dmac
 	0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, // smac
@@ -135,21 +139,21 @@ static clockid_t get_clockid(int fd)
 static void setsockopt_txtime(int fd)
 {
 
-	int fdd;
-    char *device = "/dev/ptp2";
-    clockid_t clkid;
+	// int fdd;
+    // char *device = "/dev/ptp2";
+    // clockid_t clkid;
 
-    fdd = open(device, O_RDWR);
-	if (fdd < 0) {
-		fprintf(stderr, "opening %s: %s\n", device, strerror(errno));
-		// return -1;
-	}
+    // fdd = open(device, O_RDWR);
+	// if (fdd < 0) {
+	// 	fprintf(stderr, "opening %s: %s\n", device, strerror(errno));
+	// 	// return -1;
+	// }
 
-	clkid = get_clockid(fdd);
-	if (CLOCK_INVALID == clkid) {
-		fprintf(stderr, "failed to read clock id\n");
-		// return -1;
-	}
+	// clkid = get_clockid(fdd);
+	// if (CLOCK_INVALID == clkid) {
+	// 	fprintf(stderr, "failed to read clock id\n");
+	// 	// return -1;
+	// }
 
 	struct sock_txtime so_txtime_val = {
 			.clockid =  CLOCK_TAI,
@@ -355,6 +359,7 @@ static void set_sequenceId(unsigned char *packet, __u16 seq_id)
 	// else
 	// 	u16_to_char(&packet[SEQ_OFFSET], seq_id);
 
+	seq_id = htons(seq_id);
 	u16_to_char(&packet[SEQ_OFFSET], seq_id);
 }
 
@@ -459,6 +464,10 @@ void save_tstamp(struct timespec *stamp, unsigned char *data, size_t length, Pac
 		got_tx = 1;
 		pkt_seq = tx_seq;
 		DEBUG("Got TX seq %d. %lu.%lu\n", pkt_seq, stamp->tv_sec, stamp->tv_nsec);
+		timestamp_arr[time_index].tv_sec = stamp->tv_sec;
+		timestamp_arr[time_index].tv_nsec = stamp->tv_nsec;
+		sequence_ids[time_index] = pkt_seq;
+		time_index++;
 	} else if (is_rx_tstamp(data)) {
 		got_rx = 1;
 		pkt_seq = get_sequenceId(data);
@@ -605,6 +614,8 @@ static int run(Packets *pkts, int tx_sock)
 	}
 }
 
+
+
 int main(int argc, char **argv)
 {
     int tx_sock;
@@ -629,13 +640,13 @@ int main(int argc, char **argv)
 		return ENOMEM;
 
     /* Sender */
-    tx_sock = setup_tx_sock("enp65s0f0np0", 0, true, false, false);
+    tx_sock = setup_tx_sock("enp24s0np0", 0, true, false, false);
     if (tx_sock < 0) {
 		ERR("failed setting up TX socket\n");
 		// goto out_err_tx_sock;
 	}
 
-    get_smac(tx_sock, "enp65s0f0np0", mac);
+    get_smac(tx_sock, "enp24s0np0", mac);
 	set_smac(pkts.frame, mac);
 
 	pkts.timerfd = create_timer();
@@ -643,6 +654,15 @@ int main(int argc, char **argv)
 		goto out_err_timer;
 
 	err = run(&pkts, tx_sock);
+
+	int z = 0;
+	FILE *fpt;
+	fpt = fopen("./wire_to_wire_send.csv", "w+");
+	fprintf(fpt,"seq_id,time_part_sec,time_part_nsec\n");
+	for (z = 0; z < time_index; z++ ) {
+		fprintf(fpt,"%d,%ld,%ld\n",sequence_ids[z],timestamp_arr[z].tv_sec,timestamp_arr[z].tv_nsec);
+	}
+	fclose(fpt);
 
 // out_err_tx_sock:
 	// pthread_kill(rx_thread, SIGINT);
