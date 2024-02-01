@@ -30,6 +30,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#define DEVICE "/dev/ptp2"
 
 #include "common.h"
 
@@ -121,6 +122,9 @@ int main(int argc, char **argv) {
 
     clkid = get_nic_clock_id();
 
+    pthread_t clock_thread;
+    pthread_create(&clock_thread, NULL, read_time, NULL);
+
     int m = 0;
     while(m < 1025)
     {
@@ -141,7 +145,7 @@ int main(int argc, char **argv) {
 
         //send time
 		// struct timespec client_send_time = get_nicclock();
-        send_timestamp_arr[time_index] = get_nicclock();
+        send_timestamp_arr[time_index] = now;
 
         n = sendto(sockfd, buf, strlen(buf), 0, &serveraddr, serverlen);
         if (n < 0) 
@@ -154,14 +158,19 @@ int main(int argc, char **argv) {
         // printf("Echo from server: %s \n", buf);
 
         //recv time
-        recv_timestamp_arr[time_index] = get_nicclock();
+        recv_timestamp_arr[time_index] = now;
 
         time_index++;
     }
 
+    quit = 1;
+
+    pthread_join(clock_thread, NULL);
+
     int z = 0;
 	FILE *fpt;
-	fpt = fopen("./logs/mem_to_mem_send_l1_fpga.csv", "w+");
+	fpt = fopen("./logs/mem_send_l1_dif_thread.csv", "w+");
+    // fpt = fopen("./testing.csv", "w+");
 	fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
 	for (z = 0; z < time_index; z++ ) {
 		fprintf(fpt,"%d,%ld,%ld,%ld,%ld\n",sequence_ids[z],send_timestamp_arr[z].tv_sec,send_timestamp_arr[z].tv_nsec, recv_timestamp_arr[z].tv_sec,recv_timestamp_arr[z].tv_nsec);

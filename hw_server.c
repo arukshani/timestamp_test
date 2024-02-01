@@ -3,6 +3,40 @@
  * usage: udpserver <port>
  */
 
+ #include <stdio.h>
+#include <stdbool.h>
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/time.h>
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <signal.h>
+#include <getopt.h>
+#include <sys/timerfd.h>
+#include <sys/eventfd.h>
+#include <fcntl.h>
+
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <asm/socket.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <linux/if_arp.h>
+
+#include <asm/types.h>
+
+#include <linux/net_tstamp.h>
+
+#include <linux/if_ether.h>
+
+
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -30,8 +64,12 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <pthread.h>
+
+#define DEVICE "/dev/ptp3"
 
 #include "common.h"
+#include "hw_common.h"
 
 #define BUFSIZE 1024
 
@@ -43,20 +81,27 @@ void error(char *msg) {
   exit(1);
 }
 
-extern bool running;// = true;
-bool running = true;
+// extern bool running;// = true;
+// bool running = true;
 
-static void sig_handler(int sig)
-{
-	running = false;
-}
+// static void sig_handler(int sig)
+// {
+// 	running = false;
+// }
 
 long time_index = 0;
 struct timespec send_timestamp_arr[2000];
 struct timespec recv_timestamp_arr[2000];
 int sequence_ids[20000];
 
+static void sig_handler(int sig)
+{
+	running = false;
+}
+
 int main(int argc, char **argv) {
+  signal(SIGINT, sig_handler);
+
   int sockfd; /* socket */
   int portno; /* port to listen on */
   int clientlen; /* byte size of client's address */
@@ -84,6 +129,8 @@ int main(int argc, char **argv) {
   if (sockfd < 0) 
     error("ERROR opening socket");
 
+  sockfd = setup_sock(sockfd);
+
   /* setsockopt: Handy debugging trick that lets 
    * us rerun the server immediately after we kill it; 
    * otherwise we have to wait about 20 secs. 
@@ -98,8 +145,6 @@ int main(int argc, char **argv) {
    */
   bzero((char *) &serveraddr, sizeof(serveraddr));
   serveraddr.sin_family = AF_INET;
-//   serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    // serveraddr.sin_addr.s_addr = inet_addr(hostip); 
   serveraddr.sin_port = htons((unsigned short)portno);
 
   /* 
@@ -113,64 +158,44 @@ int main(int argc, char **argv) {
    * main loop: wait for a datagram, then echo it
    */
   clientlen = sizeof(clientaddr);
-  clkid = get_nic_clock_id();
-//   signal(SIGINT, sig_handler);
-//   int m = 0;
-  while (1) {
+  // clkid = get_nic_clock_id();
+  // pthread_t clock_thread;
+  // pthread_create(&clock_thread, NULL, read_time, NULL);
 
-    /*
-     * recvfrom: receive a UDP datagram from a client
-     */
-    bzero(buf, BUFSIZE);
-    n = recvfrom(sockfd, buf, BUFSIZE, 0,
-		 (struct sockaddr *) &clientaddr, &clientlen);
-    if (n < 0)
-      error("ERROR in recvfrom");
+  // pthread_t rx_thread;
+  // struct rx_thread_data rx_args;
+  // rx_args.sockfd = sockfd;
+  // pthread_create(&rx_thread, NULL, rcv_pkt, &rx_args);
 
-    //recv time
-    sequence_ids[time_index] = atoi(buf);
-    recv_timestamp_arr[time_index] = get_nicclock();
+  // while (time_index < 10) {
 
-    // printf("%d \n", sequence_ids[time_index]);
-    /* 
-     * gethostbyaddr: determine who sent the datagram
-     */
-    // hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, 
-	// 		  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-    // if (hostp == NULL)
-    //   error("ERROR on gethostbyaddr");
-    // hostaddrp = inet_ntoa(clientaddr.sin_addr);
-    // if (hostaddrp == NULL)
-    //   error("ERROR on inet_ntoa\n");
-    // printf("server received datagram from %s (%s)\n", 
-	  //  hostp->h_name, hostaddrp);
-    // printf("server received %d/%d bytes: %s\n", strlen(buf), n, buf);
+    // bzero(buf, BUFSIZE);
+    // n = recvfrom(sockfd, buf, BUFSIZE, 0,
+		//  (struct sockaddr *) &clientaddr, &clientlen);
+    // if (n < 0)
+    //   error("ERROR in recvfrom");
+
+    // printf("Main thread %d \n", atoi(buf));
     
-    /* 
-     * sendto: echo the input back to the client 
-     */
 
-    //send time
-    send_timestamp_arr[time_index] = get_nicclock();
+  // }
 
-    n = sendto(sockfd, buf, strlen(buf), 0, 
-	       (struct sockaddr *) &clientaddr, clientlen);
-    if (n < 0) 
-      error("ERROR in sendto");
+  rcv_pkt(sockfd);
+  printf("hello \n");
+  // running = false;
+  // pthread_join(rx_thread, NULL);
 
-    time_index++;
-    if (time_index > 1024) {
-        break;
-    }
-  }
+    // quit = 1;
+    // pthread_join(clock_thread, NULL);
 
-    int z = 0;
-    FILE *fpt;
-    fpt = fopen("./logs/mem_to_mem_recv_l2_fpga.csv", "w+");
-    fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
-    for (z = 0; z < time_index; z++ ) {
-        fprintf(fpt,"%d,%ld,%ld,%ld,%ld\n",sequence_ids[z],send_timestamp_arr[z].tv_sec,send_timestamp_arr[z].tv_nsec, recv_timestamp_arr[z].tv_sec,recv_timestamp_arr[z].tv_nsec);
-    }
-    fclose(fpt);
+    // int z = 0;
+    // FILE *fpt;
+    // fpt = fopen("./logs/mem_recv_l2_dif_thread.csv", "w+");
+    // // fpt = fopen("./testing_recv.csv", "w+");
+    // fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
+    // for (z = 0; z < time_index; z++ ) {
+    //     fprintf(fpt,"%d,%ld,%ld,%ld,%ld\n",sequence_ids[z],send_timestamp_arr[z].tv_sec,send_timestamp_arr[z].tv_nsec, recv_timestamp_arr[z].tv_sec,recv_timestamp_arr[z].tv_nsec);
+    // }
+    // fclose(fpt);
 
 }

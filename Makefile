@@ -7,7 +7,12 @@ CC = gcc
 OPTS = -pthread -g -Wall
 
 # the build target executable:
-TARGET = fake_ptp
+# TARGET = udp_client
+# TARGET = udp_server
+# TARGET = client
+# TARGET = server
+# TARGET = hw_client
+TARGET = hw_server
 
 default: $(TARGET)
 

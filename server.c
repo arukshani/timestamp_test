@@ -30,6 +30,9 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <pthread.h>
+
+#define DEVICE "/dev/ptp3"
 
 #include "common.h"
 
@@ -114,9 +117,12 @@ int main(int argc, char **argv) {
    */
   clientlen = sizeof(clientaddr);
   clkid = get_nic_clock_id();
+  pthread_t clock_thread;
+  pthread_create(&clock_thread, NULL, read_time, NULL);
+
 //   signal(SIGINT, sig_handler);
 //   int m = 0;
-  while (1) {
+  while (time_index < 1025) {
 
     /*
      * recvfrom: receive a UDP datagram from a client
@@ -129,7 +135,7 @@ int main(int argc, char **argv) {
 
     //recv time
     sequence_ids[time_index] = atoi(buf);
-    recv_timestamp_arr[time_index] = get_nicclock();
+    recv_timestamp_arr[time_index] = now;
 
     // printf("%d \n", sequence_ids[time_index]);
     /* 
@@ -151,7 +157,7 @@ int main(int argc, char **argv) {
      */
 
     //send time
-    send_timestamp_arr[time_index] = get_nicclock();
+    send_timestamp_arr[time_index] = now;
 
     n = sendto(sockfd, buf, strlen(buf), 0, 
 	       (struct sockaddr *) &clientaddr, clientlen);
@@ -159,14 +165,19 @@ int main(int argc, char **argv) {
       error("ERROR in sendto");
 
     time_index++;
-    if (time_index > 1024) {
-        break;
-    }
+    // if (time_index > 10) {
+    //     break;
+    // }
   }
+
+    quit = 1;
+
+    pthread_join(clock_thread, NULL);
 
     int z = 0;
     FILE *fpt;
-    fpt = fopen("./logs/mem_to_mem_recv_l2_fpga.csv", "w+");
+    fpt = fopen("./logs/mem_recv_l2_dif_thread.csv", "w+");
+    // fpt = fopen("./testing_recv.csv", "w+");
     fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
     for (z = 0; z < time_index; z++ ) {
         fprintf(fpt,"%d,%ld,%ld,%ld,%ld\n",sequence_ids[z],send_timestamp_arr[z].tv_sec,send_timestamp_arr[z].tv_nsec, recv_timestamp_arr[z].tv_sec,recv_timestamp_arr[z].tv_nsec);
