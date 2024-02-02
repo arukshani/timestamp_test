@@ -32,7 +32,7 @@
 #include <signal.h>
 #include <pthread.h>
 
-#define DEVICE "/dev/ptp3"
+#define DEVICE "/dev/ptp2"
 
 #include "common.h"
 
@@ -122,8 +122,8 @@ int main(int argc, char **argv) {
 
 //   signal(SIGINT, sig_handler);
 //   int m = 0;
-  while (time_index < 1025) {
-
+  // while (time_index < 1026) {
+while (1) {
     /*
      * recvfrom: receive a UDP datagram from a client
      */
@@ -165,9 +165,9 @@ int main(int argc, char **argv) {
       error("ERROR in sendto");
 
     time_index++;
-    // if (time_index > 10) {
-    //     break;
-    // }
+    if (time_index > 1024) {
+        break;
+    }
   }
 
     quit = 1;
@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
 
     int z = 0;
     FILE *fpt;
-    fpt = fopen("./logs/mem_recv_l2_dif_thread.csv", "w+");
+    fpt = fopen("./logs/opera/mem_recv_l2.csv", "w+");
     // fpt = fopen("./testing_recv.csv", "w+");
     fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
     for (z = 0; z < time_index; z++ ) {

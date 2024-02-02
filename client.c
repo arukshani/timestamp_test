@@ -128,6 +128,9 @@ int main(int argc, char **argv) {
     int m = 0;
     while(m < 1025)
     {
+        /* send the message to the server */
+        sleep(1);
+
         /* get a message from the user */
         bzero(buf, BUFSIZE);
         // printf("Please enter msg: ");
@@ -137,12 +140,6 @@ int main(int argc, char **argv) {
         strcat(buf, snum);
         sequence_ids[time_index] = m;
         m++;
-
-       
-
-        /* send the message to the server */
-        sleep(1);
-
         //send time
 		// struct timespec client_send_time = get_nicclock();
         send_timestamp_arr[time_index] = now;
@@ -169,7 +166,7 @@ int main(int argc, char **argv) {
 
     int z = 0;
 	FILE *fpt;
-	fpt = fopen("./logs/mem_send_l1_dif_thread.csv", "w+");
+	fpt = fopen("./logs/opera/mem_send_l1.csv", "w+");
     // fpt = fopen("./testing.csv", "w+");
 	fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
 	for (z = 0; z < time_index; z++ ) {
