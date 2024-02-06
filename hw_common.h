@@ -5,6 +5,12 @@ char *interface = "enp24s0np0";
 # define SIOCSHWTSTAMP 0x89b0
 #endif
 
+long time_index = 0;
+struct timespec send_timestamp_arr[20000];
+struct timespec recv_timestamp_arr[20000];
+int send_sequence_ids[20000];
+int recv_sequence_ids[20000];
+
 bool running = true;
 
 struct rx_thread_data {
@@ -134,13 +140,17 @@ void save_tstamp(struct timespec *stamp, unsigned char *data, size_t length, __s
 		got_tx = 1;
 		pkt_seq = tx_seq;
 		// DEBUG("Got TX seq %d. %lu.%lu\n", pkt_seq, stamp->tv_sec, stamp->tv_nsec);
-        printf("Got TX seq %d. %lu.%lu\n", pkt_seq, stamp->tv_sec, stamp->tv_nsec);
-		// timestamp_arr[time_index].tv_sec = stamp->tv_sec;
-		// timestamp_arr[time_index].tv_nsec = stamp->tv_nsec;
-		// sequence_ids[time_index] = pkt_seq;
-		// time_index++;
+        // printf("Got TX seq %d. %lu.%lu\n", pkt_seq, stamp->tv_sec, stamp->tv_nsec);
+		send_timestamp_arr[time_index].tv_sec = stamp->tv_sec;
+		send_timestamp_arr[time_index].tv_nsec = stamp->tv_nsec;
+		send_sequence_ids[time_index] = pkt_seq;
+		time_index++;
 	} else if (tx_seq == -1) {
-        printf("Got RX seq %d. %lu.%lu\n", atoi(data), stamp->tv_sec, stamp->tv_nsec);
+        // printf("Got RX seq %d. %lu.%lu\n", atoi(data), stamp->tv_sec, stamp->tv_nsec);
+		recv_timestamp_arr[time_index].tv_sec = stamp->tv_sec;
+		recv_timestamp_arr[time_index].tv_nsec = stamp->tv_nsec;
+		recv_sequence_ids[time_index] = atoi(data);
+		time_index++;
     } else {
 		// If the packet we read was not the tx packet then set back
 		// txcount_flag and try again.

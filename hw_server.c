@@ -66,7 +66,7 @@
 #include <signal.h>
 #include <pthread.h>
 
-#define DEVICE "/dev/ptp3"
+#define DEVICE "/dev/ptp2"
 
 #include "common.h"
 #include "hw_common.h"
@@ -89,10 +89,10 @@ void error(char *msg) {
 // 	running = false;
 // }
 
-long time_index = 0;
-struct timespec send_timestamp_arr[2000];
-struct timespec recv_timestamp_arr[2000];
-int sequence_ids[20000];
+// long time_index = 0;
+// struct timespec send_timestamp_arr[2000];
+// struct timespec recv_timestamp_arr[2000];
+// int sequence_ids[20000];
 
 static void sig_handler(int sig)
 {
@@ -188,14 +188,13 @@ int main(int argc, char **argv) {
     // quit = 1;
     // pthread_join(clock_thread, NULL);
 
-    // int z = 0;
-    // FILE *fpt;
-    // fpt = fopen("./logs/mem_recv_l2_dif_thread.csv", "w+");
-    // // fpt = fopen("./testing_recv.csv", "w+");
-    // fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
-    // for (z = 0; z < time_index; z++ ) {
-    //     fprintf(fpt,"%d,%ld,%ld,%ld,%ld\n",sequence_ids[z],send_timestamp_arr[z].tv_sec,send_timestamp_arr[z].tv_nsec, recv_timestamp_arr[z].tv_sec,recv_timestamp_arr[z].tv_nsec);
-    // }
-    // fclose(fpt);
+    int z = 0;
+	FILE *fpt;
+	fpt = fopen("./logs/nic-to-nic/exp2/nic-recv-l1.csv", "w+");
+	fprintf(fpt,"seq_id,time_part_sec,time_part_nsec\n");
+	for (z = 0; z < time_index; z++ ) {
+		fprintf(fpt,"%d,%ld,%ld\n",recv_sequence_ids[z],recv_timestamp_arr[z].tv_sec,recv_timestamp_arr[z].tv_nsec);
+	}
+	fclose(fpt);
 
 }

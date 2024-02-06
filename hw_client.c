@@ -90,11 +90,6 @@ struct sockaddr_in serveraddr;
 char readbuf[BUFSIZE];
 int sockfd;
 
-long time_index = 0;
-struct timespec send_timestamp_arr[2000];
-struct timespec recv_timestamp_arr[2000];
-int sequence_ids[20000];
-
 int main(int argc, char **argv) {
     int portno, n;
     
@@ -131,9 +126,10 @@ int main(int argc, char **argv) {
     // pthread_create(&clock_thread, NULL, read_time, NULL);
 
     int m = 0;
-    while(m < 10)
+    while(m < 5025)
     {
-        sleep(1);
+        // sleep(1);
+        sleep(0.001);
         /* get a message from the user */
         bzero(buf, BUFSIZE);
         char snum[5];
@@ -168,15 +164,14 @@ int main(int argc, char **argv) {
     // quit = 1;
     // pthread_join(clock_thread, NULL);
 
-    // int z = 0;
-	// FILE *fpt;
-	// fpt = fopen("./logs/mem_send_l1_dif_thread.csv", "w+");
-    // // fpt = fopen("./testing.csv", "w+");
-	// fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
-	// for (z = 0; z < time_index; z++ ) {
-	// 	fprintf(fpt,"%d,%ld,%ld,%ld,%ld\n",sequence_ids[z],send_timestamp_arr[z].tv_sec,send_timestamp_arr[z].tv_nsec, recv_timestamp_arr[z].tv_sec,recv_timestamp_arr[z].tv_nsec);
-	// }
-	// fclose(fpt);
+    int z = 0;
+	FILE *fpt;
+	fpt = fopen("./logs/nic-to-nic/exp2/nic-send-l2.csv", "w+");
+	fprintf(fpt,"seq_id,time_part_sec,time_part_nsec\n");
+	for (z = 0; z < time_index; z++ ) {
+		fprintf(fpt,"%d,%ld,%ld\n",send_sequence_ids[z],send_timestamp_arr[z].tv_sec,send_timestamp_arr[z].tv_nsec);
+	}
+	fclose(fpt);
 
     return 0;
 }

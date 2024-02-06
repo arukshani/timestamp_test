@@ -55,9 +55,9 @@ static void sig_handler(int sig)
 }
 
 long time_index = 0;
-struct timespec send_timestamp_arr[2000];
-struct timespec recv_timestamp_arr[2000];
-int sequence_ids[20000];
+struct timespec send_timestamp_arr[20000];
+struct timespec recv_timestamp_arr[20000];
+int sequence_ids[200000];
 
 int main(int argc, char **argv) {
   int sockfd; /* socket */
@@ -165,7 +165,7 @@ while (1) {
       error("ERROR in sendto");
 
     time_index++;
-    if (time_index > 1024) {
+    if (time_index > 5024) {
         break;
     }
   }
@@ -176,7 +176,7 @@ while (1) {
 
     int z = 0;
     FILE *fpt;
-    fpt = fopen("./logs/opera/mem_recv_l2.csv", "w+");
+    fpt = fopen("./logs/mem/load_mem_recv_l2.csv", "w+");
     // fpt = fopen("./testing_recv.csv", "w+");
     fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
     for (z = 0; z < time_index; z++ ) {

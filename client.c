@@ -77,9 +77,9 @@ int sockfd;
 // }
 
 long time_index = 0;
-struct timespec send_timestamp_arr[2000];
-struct timespec recv_timestamp_arr[2000];
-int sequence_ids[20000];
+struct timespec send_timestamp_arr[20000];
+struct timespec recv_timestamp_arr[20000];
+int sequence_ids[200000];
 
 int main(int argc, char **argv) {
     int portno, n;
@@ -126,10 +126,10 @@ int main(int argc, char **argv) {
     pthread_create(&clock_thread, NULL, read_time, NULL);
 
     int m = 0;
-    while(m < 1025)
+    while(m < 5025)
     {
         /* send the message to the server */
-        sleep(1);
+        sleep(0.0001);
 
         /* get a message from the user */
         bzero(buf, BUFSIZE);
@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
 
     int z = 0;
 	FILE *fpt;
-	fpt = fopen("./logs/opera/mem_send_l1.csv", "w+");
+	fpt = fopen("./logs/mem/load_mem_send_l1.csv", "w+");
     // fpt = fopen("./testing.csv", "w+");
 	fprintf(fpt,"seq_id,send_time_part_sec,send_time_part_nsec,recv_time_part_sec,recv_time_part_nsec\n");
 	for (z = 0; z < time_index; z++ ) {

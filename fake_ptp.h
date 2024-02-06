@@ -11,7 +11,8 @@
 #define CLOCK_INVALID -1
 #endif
 
-#define SEQ_OFFSET 44
+#define SEQ_OFFSET 44 //original value
+// #define SEQ_OFFSET 71
 #define DOMAIN_NUM_OFFSET 18
 
 #define ERR(str, ...) fprintf(stderr, "Error: "str, ##__VA_ARGS__)
